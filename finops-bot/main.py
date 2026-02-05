@@ -2,12 +2,12 @@ from aws.list_ec2 import get_instances
 from aws.check_cpu import get_cpu
 from aws.stop_ec2 import stop_instance
 from core.rules_engine import is_waste
-from utils.pricing import calculate_savings   # ✅ NEW
+from utils.pricing import calculate_savings 
 
 import requests
 from datetime import datetime
 
-DRY_RUN = False  # set True to test safely
+DRY_RUN = False 
 
 print("Starting AWS FinOps Bot...")
 
@@ -15,7 +15,7 @@ for instance in get_instances():
     instance_id = instance["instance_id"]
     region = instance["region"]
     state = instance["state"]
-    instance_type = instance["instance_type"]  # ✅ NEW
+    instance_type = instance["instance_type"] 
 
     cpu = get_cpu(instance)
 
@@ -27,7 +27,6 @@ for instance in get_instances():
         f"State: {state}"
     )
 
-    # ✅ SEND INSTANCE DATA TO BACKEND (UNCHANGED LOGIC)
     try:
         requests.post(
             "http://localhost:5000/api/instances",
