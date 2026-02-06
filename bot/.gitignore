@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime and generated
+recovery_state.pkl
+workflow_states/finops-*/
+workflow_states/test-workflow-*/
+system_validation_report_*.json
+cost_allocation_demo_results.json
+*.log
+
+# Local config (if any)
+.env
+.env.local

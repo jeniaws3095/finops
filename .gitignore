@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.hypothesis/
+.pycoverage
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS / Editor
+.DS_Store
+.history/
+.vscode/
+.idea/
+
+# Logs & Artifacts
+*.log
+*.gz
+
+# Build / Cache
+dist/
+build/
+.eggs/
+*.egg-info/
+
+# Bazel (if not committing config)
+bazel-*
+
+# Temporary / Local-only
+node_modules/
+.kiro
+*.sh
