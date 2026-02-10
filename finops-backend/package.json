@@ -1,18 +1,28 @@
 {
   "name": "finops-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "FinOps Backend - Multi-metric optimization API",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:run": "jest --run"
   },
-  "keywords": [],
+  "keywords": ["finops", "aws", "optimization"],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.2.1",
-    "mongoose": "^9.1.4"
+    "mongoose": "^9.1.4",
+    "mongodb": "^6.3.0",
+    "aws-sdk": "^2.1500.0",
+    "socket.io": "^4.7.2",
+    "node-cron": "^3.0.2"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
   }
 }

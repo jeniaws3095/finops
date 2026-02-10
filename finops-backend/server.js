@@ -1,73 +1,92 @@
 const express = require("express");
 const cors = require("cors");
 
+// Import route handlers
+const instancesRoutes = require("./routes/instances");
+const savingsRoutes = require("./routes/savings");
+const loadBalancersRoutes = require("./routes/load-balancers");
+const autoScalingGroupsRoutes = require("./routes/auto-scaling-groups");
+const ebsVolumesRoutes = require("./routes/ebs-volumes");
+const rdsInstancesRoutes = require("./routes/rds-instances");
+const costingRoutes = require("./routes/costing");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// In-memory store
-let instances = [];
-let savings = [];
-
-// Save instances (UNCHANGED)
-app.post("/api/instances", (req, res) => {
-  console.log("🔥 RECEIVED INSTANCE:", req.body);
-
-  const existing = instances.find(
-    i => i.instance_id === req.body.instance_id
-  );
-
-  if (!existing) {
-    instances.push(req.body);
-  }
-
-  res.json({ status: "instance saved" });
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
-// Get instances (UNCHANGED)
-app.get("/api/instances", (req, res) => {
-  console.log("📤 SENDING INSTANCES:", instances);
-  res.json(instances);
+// API Routes
+app.use("/api/instances", instancesRoutes);
+app.use("/api/savings", savingsRoutes);
+app.use("/api/load-balancers", loadBalancersRoutes);
+app.use("/api/auto-scaling-groups", autoScalingGroupsRoutes);
+app.use("/api/ebs-volumes", ebsVolumesRoutes);
+app.use("/api/rds-instances", rdsInstancesRoutes);
+app.use("/api/costing", costingRoutes);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Not Found",
+    path: req.path,
+    method: req.method
+  });
 });
 
-// ✅ UPDATED: Save savings (EXPLICIT EXTRACTION)
-app.post("/api/savings", (req, res) => {
-  const {
-    resource_id,
-    cloud,
-    money_saved,
-    region,
-    state,
-    instance_type,
-    pricing_model,
-    estimated_hours_saved,
-    date
-  } = req.body;
-
-  const savingsRecord = {
-    resource_id,
-    cloud,
-    money_saved,
-    region,
-    state,
-    instance_type,
-    pricing_model,
-    estimated_hours_saved,
-    date
-  };
-
-  console.log("💰 RECEIVED SAVINGS:", savingsRecord);
-
-  savings.push(savingsRecord);
-
-  res.json({ status: "savings saved" });
+// Error handler
+app.use((err, req, res, next) => {
+  console.error("❌ Server error:", err);
+  res.status(500).json({
+    error: "Internal Server Error",
+    message: err.message
+  });
 });
 
-// Get savings (UNCHANGED BEHAVIOR)
-app.get("/api/savings", (req, res) => {
-  res.json(savings);
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log("\n" + "=".repeat(80));
+  console.log("🚀 FinOps Backend Server Started");
+  console.log("=".repeat(80));
+  console.log(`\n📍 Server running on port ${PORT}`);
+  console.log(`\n📋 Available Endpoints:\n`);
+  console.log("  Health Check:");
+  console.log(`    GET  http://localhost:${PORT}/health\n`);
+  console.log("  🔄 RESIZE & RECOMMENDATIONS:");
+  console.log(`    GET  http://localhost:${PORT}/api/instances/:instanceId/resize-options`);
+  console.log(`    POST http://localhost:${PORT}/api/instances/:instanceId/resize\n`);
+  console.log("  💰 SAVINGS & COST TRACKING:");
+  console.log(`    POST http://localhost:${PORT}/api/savings`);
+  console.log(`    GET  http://localhost:${PORT}/api/savings`);
+  console.log(`    GET  http://localhost:${PORT}/api/savings/summary`);
+  console.log(`    GET  http://localhost:${PORT}/api/costing/current`);
+  console.log(`    GET  http://localhost:${PORT}/api/costing/by-region`);
+  console.log(`    GET  http://localhost:${PORT}/api/costing/by-service\n`);
+  console.log("  📊 RESOURCE MANAGEMENT:");
+  console.log(`    POST http://localhost:${PORT}/api/instances`);
+  console.log(`    GET  http://localhost:${PORT}/api/instances`);
+  console.log(`    GET  http://localhost:${PORT}/api/instances/:instanceId`);
+  console.log(`    POST http://localhost:${PORT}/api/load-balancers`);
+  console.log(`    GET  http://localhost:${PORT}/api/load-balancers`);
+  console.log(`    GET  http://localhost:${PORT}/api/load-balancers/:lbArn`);
+  console.log(`    POST http://localhost:${PORT}/api/auto-scaling-groups`);
+  console.log(`    GET  http://localhost:${PORT}/api/auto-scaling-groups`);
+  console.log(`    GET  http://localhost:${PORT}/api/auto-scaling-groups/:asgArn`);
+  console.log(`    POST http://localhost:${PORT}/api/ebs-volumes`);
+  console.log(`    GET  http://localhost:${PORT}/api/ebs-volumes`);
+  console.log(`    GET  http://localhost:${PORT}/api/ebs-volumes/:volumeId`);
+  console.log(`    POST http://localhost:${PORT}/api/rds-instances`);
+  console.log(`    GET  http://localhost:${PORT}/api/rds-instances`);
+  console.log(`    GET  http://localhost:${PORT}/api/rds-instances/:dbInstanceId\n`);
+  console.log("=".repeat(80) + "\n");
 });
 
-app.listen(5000, () => {
-  console.log("Backend running on port 5000");
-});
+module.exports = app;
