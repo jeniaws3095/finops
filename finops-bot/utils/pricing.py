@@ -552,3 +552,279 @@ def get_rds_total_cost(db_instance_class, storage_type, allocated_storage_gb, re
         "total_monthly": total_hourly * 24 * 30,
         "total_annual": total_hourly * 24 * 365
     }
+
+
+def get_ec2_instance_cost(instance):
+    """Calculate hourly cost for an EC2 instance"""
+    instance_type = instance["instance_type"]
+    region = instance["region"]
+    state = instance["state"]
+    
+    # Get hourly cost from pricing data
+    hourly_cost = get_instance_hourly_cost(instance_type, region)
+    
+    # Only charge for running instances
+    if state == "running":
+        return {
+            "hourly_cost": hourly_cost,
+            "daily_cost": hourly_cost * 24,
+            "monthly_cost": hourly_cost * 24 * 30,
+            "annual_cost": hourly_cost * 24 * 365
+        }
+    else:
+        return {
+            "hourly_cost": 0.0,
+            "daily_cost": 0.0,
+            "monthly_cost": 0.0,
+            "annual_cost": 0.0
+        }
+
+
+def get_load_balancer_cost(load_balancer, metrics):
+    """Calculate hourly cost for a load balancer"""
+    lb_type = load_balancer["load_balancer_type"]
+    region = load_balancer["region"]
+    state = load_balancer["state"]
+    
+    # Get base hourly cost from pricing data
+    hourly_base_cost = get_load_balancer_hourly_cost(lb_type, region)
+    
+    # Add data processing charges (per GB)
+    processed_bytes = metrics.get("ProcessedBytes", 0)
+    processed_gb = processed_bytes / (1024 ** 3)
+    data_processing_rate = get_data_processing_rate(region)
+    data_processing_cost = processed_gb * data_processing_rate
+    
+    # Add new connections charge (per million)
+    request_count = metrics.get("RequestCount", 0)
+    new_connections = request_count  # Simplified: assume 1 connection per request
+    new_connections_rate = get_new_connections_rate(region)
+    new_connections_cost = (new_connections / 1_000_000) * new_connections_rate
+    
+    total_hourly_cost = hourly_base_cost + data_processing_cost + new_connections_cost
+    
+    if state == "active":
+        return {
+            "hourly_base_cost": hourly_base_cost,
+            "data_processing_cost": data_processing_cost,
+            "new_connections_cost": new_connections_cost,
+            "hourly_cost": total_hourly_cost,
+            "daily_cost": total_hourly_cost * 24,
+            "monthly_cost": total_hourly_cost * 24 * 30,
+            "annual_cost": total_hourly_cost * 24 * 365
+        }
+    else:
+        return {
+            "hourly_base_cost": 0.0,
+            "data_processing_cost": 0.0,
+            "new_connections_cost": 0.0,
+            "hourly_cost": 0.0,
+            "daily_cost": 0.0,
+            "monthly_cost": 0.0,
+            "annual_cost": 0.0
+        }
+
+
+def get_ebs_volume_cost(volume):
+    """Calculate cost for a single EBS volume"""
+    volume_type = volume["volume_type"]
+    size_gb = volume["size_gb"]
+    region = volume["region"]
+    
+    # Get monthly cost from pricing data
+    monthly_cost = get_ebs_volume_monthly_cost(volume_type, size_gb, region)
+    
+    return {
+        "hourly_cost": monthly_cost / 30 / 24,
+        "daily_cost": monthly_cost / 30,
+        "monthly_cost": monthly_cost,
+        "annual_cost": monthly_cost * 12
+    }
+
+
+def get_rds_instance_cost(rds):
+    """Calculate hourly cost for an RDS instance"""
+    db_instance_class = rds["db_instance_class"]
+    region = rds["region"]
+    multi_az = rds.get("multi_az", False)
+    
+    # Get hourly cost from pricing data
+    hourly_cost = get_rds_instance_hourly_cost(db_instance_class, region)
+    
+    # Multi-AZ doubles the cost
+    if multi_az:
+        hourly_cost *= 2
+    
+    return {
+        "hourly_cost": hourly_cost,
+        "daily_cost": hourly_cost * 24,
+        "monthly_cost": hourly_cost * 24 * 30,
+        "annual_cost": hourly_cost * 24 * 365
+    }
+
+
+def get_asg_cost(asg, metrics):
+    """Calculate hourly cost for an Auto Scaling Group (sum of EC2 instances)"""
+    import boto3
+    
+    instance_ids = asg["instance_ids"]
+    region = asg["region"]
+    
+    # Get EC2 client to fetch instance details
+    ec2 = boto3.client("ec2", region_name=region)
+    
+    total_hourly_cost = 0.0
+    instance_costs = []
+    
+    try:
+        if instance_ids:
+            response = ec2.describe_instances(InstanceIds=instance_ids)
+            
+            for reservation in response["Reservations"]:
+                for instance in reservation["Instances"]:
+                    instance_type = instance["InstanceType"]
+                    state = instance["State"]["Name"]
+                    
+                    # Create instance dict for cost calculation
+                    instance_dict = {
+                        "instance_type": instance_type,
+                        "region": region,
+                        "state": state
+                    }
+                    
+                    cost = get_ec2_instance_cost(instance_dict)
+                    total_hourly_cost += cost["hourly_cost"]
+                    instance_costs.append({
+                        "instance_id": instance["InstanceId"],
+                        "instance_type": instance_type,
+                        "state": state,
+                        "hourly_cost": cost["hourly_cost"]
+                    })
+    
+    except Exception as e:
+        print(f"⚠️ Error calculating ASG costs: {e}")
+    
+    return {
+        "instance_count": len(instance_ids),
+        "running_instances": len([ic for ic in instance_costs if ic["state"] == "running"]),
+        "instance_costs": instance_costs,
+        "hourly_cost": total_hourly_cost,
+        "daily_cost": total_hourly_cost * 24,
+        "monthly_cost": total_hourly_cost * 24 * 30,
+        "annual_cost": total_hourly_cost * 24 * 365
+    }
+
+
+def get_ebs_volumes_region_cost(region):
+    """Calculate cost for all EBS volumes in a region"""
+    import boto3
+    
+    ec2 = boto3.client("ec2", region_name=region)
+    
+    total_monthly_cost = 0.0
+    volume_costs = []
+    
+    try:
+        response = ec2.describe_volumes()
+        
+        for volume in response["Volumes"]:
+            volume_type = volume["VolumeType"]
+            size_gb = volume["Size"]
+            state = volume["State"]
+            
+            # Get monthly cost from pricing data
+            monthly_cost = get_ebs_volume_monthly_cost(volume_type, size_gb, region)
+            
+            if state == "available" or state == "in-use":
+                total_monthly_cost += monthly_cost
+                volume_costs.append({
+                    "volume_id": volume["VolumeId"],
+                    "volume_type": volume_type,
+                    "size_gb": size_gb,
+                    "state": state,
+                    "monthly_cost": monthly_cost
+                })
+    
+    except Exception as e:
+        print(f"⚠️ Error calculating EBS costs: {e}")
+    
+    return {
+        "volume_count": len(volume_costs),
+        "volume_costs": volume_costs,
+        "monthly_cost": total_monthly_cost,
+        "daily_cost": total_monthly_cost / 30,
+        "hourly_cost": total_monthly_cost / 30 / 24,
+        "annual_cost": total_monthly_cost * 12
+    }
+
+
+def get_total_region_cost(region):
+    """Calculate total cost for all resources in a region"""
+    import boto3
+    
+    ec2 = boto3.client("ec2", region_name=region)
+    elbv2 = boto3.client("elbv2", region_name=region)
+    autoscaling = boto3.client("autoscaling", region_name=region)
+    
+    total_cost = {
+        "region": region,
+        "ec2_cost": 0.0,
+        "load_balancer_cost": 0.0,
+        "asg_cost": 0.0,
+        "ebs_cost": 0.0,
+        "total_hourly": 0.0,
+        "total_daily": 0.0,
+        "total_monthly": 0.0,
+        "total_annual": 0.0,
+        "breakdown": {}
+    }
+    
+    try:
+        # EC2 instances
+        response = ec2.describe_instances()
+        for reservation in response["Reservations"]:
+            for instance in reservation["Instances"]:
+                instance_dict = {
+                    "instance_type": instance["InstanceType"],
+                    "region": region,
+                    "state": instance["State"]["Name"]
+                }
+                cost = get_ec2_instance_cost(instance_dict)
+                total_cost["ec2_cost"] += cost["hourly_cost"]
+        
+        # Load Balancers (ALB/NLB)
+        response = elbv2.describe_load_balancers()
+        for lb in response["LoadBalancers"]:
+            lb_dict = {
+                "load_balancer_type": lb["Type"],
+                "region": region,
+                "state": lb["State"]["Code"]
+            }
+            metrics = {"ProcessedBytes": 0, "RequestCount": 0}
+            cost = get_load_balancer_cost(lb_dict, metrics)
+            total_cost["load_balancer_cost"] += cost["hourly_cost"]
+        
+        # EBS volumes
+        ebs_cost = get_ebs_volumes_region_cost(region)
+        total_cost["ebs_cost"] = ebs_cost["hourly_cost"]
+        
+        # Calculate totals
+        total_cost["total_hourly"] = (
+            total_cost["ec2_cost"] + 
+            total_cost["load_balancer_cost"] + 
+            total_cost["ebs_cost"]
+        )
+        total_cost["total_daily"] = total_cost["total_hourly"] * 24
+        total_cost["total_monthly"] = total_cost["total_hourly"] * 24 * 30
+        total_cost["total_annual"] = total_cost["total_hourly"] * 24 * 365
+        
+        total_cost["breakdown"] = {
+            "ec2": total_cost["ec2_cost"],
+            "load_balancers": total_cost["load_balancer_cost"],
+            "ebs": total_cost["ebs_cost"]
+        }
+    
+    except Exception as e:
+        print(f"❌ Error calculating region costs for {region}: {e}")
+    
+    return total_cost

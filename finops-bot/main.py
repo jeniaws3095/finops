@@ -10,15 +10,17 @@ from aws.check_ebs_metrics import get_ebs_volume_metrics, is_volume_unused
 from aws.list_rds_instances import get_rds_instances
 from aws.check_rds_metrics import get_rds_instance_metrics, is_rds_underutilized
 from aws.stop_rds import stop_rds_instance, delete_rds_instance, modify_rds_instance
-from aws.get_current_costs import (
+from core.rules_engine import is_waste, is_rds_waste
+from utils.pricing import (
+    calculate_savings,
     get_ec2_instance_cost,
     get_load_balancer_cost,
-    get_asg_cost,
     get_ebs_volume_cost,
+    get_rds_instance_cost,
+    get_asg_cost,
+    get_ebs_volumes_region_cost,
     get_total_region_cost
-)
-from core.rules_engine import is_waste, is_rds_waste
-from utils.pricing import calculate_savings 
+) 
 
 import requests
 from datetime import datetime, timezone
@@ -277,15 +279,21 @@ print("\n" + "="*80)
 print("Processing EBS Volumes...")
 print("="*80)
 
-for volume in mock_ebs_volumes:
+for volume in get_ebs_volumes():
     volume_id = volume["volume_id"]
     region = volume["region"]
-    vol_type = volume["type"]
-    size = volume["size"]
+    vol_type = volume["volume_type"]
+    size = volume["size_gb"]
     state = volume["state"]
     
-    # Mock pricing: $0.10 per GB-month for gp3, $0.10 for gp2
-    monthly_cost = size * 0.10
+    # Get EBS metrics to check if volume is unused
+    metrics = get_ebs_volume_metrics(volume)
+    is_unused = is_volume_unused(volume, metrics)
+    
+    # Calculate EBS volume cost
+    volume_cost = get_ebs_volume_cost(volume)
+    hourly_cost = volume_cost["hourly_cost"]
+    monthly_cost = volume_cost["monthly_cost"]
     total_monthly_cost += monthly_cost
     
     print(
@@ -306,17 +314,17 @@ for volume in mock_ebs_volumes:
                 "size_gb": size,
                 "region": region,
                 "state": state,
-                "availability_zone": f"{region}a",
-                "encrypted": False,
-                "iops": None,
-                "throughput": None,
-                "attached_instance_id": volume.get("attached"),
-                "attached_device": None,
-                "metrics": {},
-                "hourly_cost": round(monthly_cost / 730, 4),
+                "availability_zone": volume.get("availability_zone", f"{region}a"),
+                "encrypted": volume.get("encrypted", False),
+                "iops": volume.get("iops"),
+                "throughput": volume.get("throughput"),
+                "attached_instance_id": volume.get("attached_instance_id"),
+                "attached_device": volume.get("attached_device"),
+                "metrics": metrics,
+                "hourly_cost": round(hourly_cost, 4),
                 "monthly_cost": round(monthly_cost, 2),
                 "annual_cost": round(monthly_cost * 12, 2),
-                "tags": {}
+                "tags": volume.get("tags", {})
             },
             timeout=5
         )
@@ -325,7 +333,7 @@ for volume in mock_ebs_volumes:
         print("❌ EBS Volume API error:", e)
     
     # Check if EBS volume is unused and calculate savings
-    if state == "available":
+    if is_unused and state == "available":
         money_saved = monthly_cost * 1.0  # 100% savings if deleted
         
         try:
@@ -363,22 +371,20 @@ print("\n" + "="*80)
 print("Processing RDS Instances...")
 print("="*80)
 
-for rds in mock_rds_instances:
-    db_instance_id = rds["db_id"]
+for rds in get_rds_instances():
+    db_instance_id = rds["db_instance_id"]
     engine = rds["engine"]
-    db_instance_class = rds["class"]
+    db_instance_class = rds["db_instance_class"]
     region = rds["region"]
-    cpu = rds["cpu"]
     
-    # Mock pricing for RDS
-    pricing_map = {
-        "db.t3.medium": {"hourly": 0.168, "monthly": 122.64},
-        "db.t3.small": {"hourly": 0.084, "monthly": 61.32},
-    }
+    # Get RDS metrics to check CPU utilization
+    metrics = get_rds_instance_metrics(rds)
+    cpu = metrics.get("CPUUtilizationPercent", 0)
     
-    pricing = pricing_map.get(db_instance_class, {"hourly": 0.1, "monthly": 73})
-    hourly_cost = pricing["hourly"]
-    monthly_cost = pricing["monthly"]
+    # Calculate RDS instance cost
+    rds_cost = get_rds_instance_cost(rds)
+    hourly_cost = rds_cost["hourly_cost"]
+    monthly_cost = rds_cost["monthly_cost"]
     total_monthly_cost += monthly_cost
     
     print(
@@ -395,25 +401,25 @@ for rds in mock_rds_instances:
             "http://localhost:5000/api/rds-instances",
             json={
                 "db_instance_id": db_instance_id,
-                "db_instance_arn": rds["arn"],
+                "db_instance_arn": rds["db_instance_arn"],
                 "engine": engine,
-                "engine_version": "8.0.28",
+                "engine_version": rds.get("engine_version", ""),
                 "db_instance_class": db_instance_class,
                 "region": region,
-                "status": "available",
-                "allocated_storage_gb": 100,
-                "storage_type": "gp2",
-                "multi_az": False,
-                "backup_retention_days": 7,
-                "publicly_accessible": False,
-                "read_replicas": [],
-                "metrics": {"CPUUtilizationPercent": cpu, "DatabaseConnections": 5},
+                "status": rds.get("status", "available"),
+                "allocated_storage_gb": rds.get("allocated_storage_gb", 0),
+                "storage_type": rds.get("storage_type", "gp2"),
+                "multi_az": rds.get("multi_az", False),
+                "backup_retention_days": rds.get("backup_retention_days", 7),
+                "publicly_accessible": rds.get("publicly_accessible", False),
+                "read_replicas": rds.get("read_replicas", []),
+                "metrics": metrics,
                 "instance_hourly_cost": round(hourly_cost * 0.8, 4),
                 "storage_hourly_cost": round(hourly_cost * 0.2, 4),
                 "hourly_cost": round(hourly_cost, 4),
                 "monthly_cost": round(monthly_cost, 2),
                 "annual_cost": round(monthly_cost * 12, 2),
-                "tags": {}
+                "tags": rds.get("tags", {})
             },
             timeout=5
         )

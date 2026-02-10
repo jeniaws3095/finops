@@ -23,6 +23,24 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Reset endpoint - clears all data
+app.post("/reset", (req, res) => {
+  const store = require('./store');
+  store.instances = [];
+  store.savings = [];
+  store.loadBalancers = [];
+  store.autoScalingGroups = [];
+  store.ebsVolumes = [];
+  store.rdsInstances = [];
+  
+  console.log('🔄 Store reset - all data cleared');
+  res.json({
+    status: 'success',
+    message: 'All data cleared',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // API Routes
 app.use("/api/instances", instancesRoutes);
 app.use("/api/savings", savingsRoutes);

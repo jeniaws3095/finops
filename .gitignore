@@ -33,3 +33,4 @@ build/
 .amazonq
 .kiro
 .history
+Frontend/*

@@ -1,33 +1,40 @@
-import { useState } from "react";
-import Dashboard from "./Dashboard";
-import ResourceDetail from "./ResourceDetail";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider } from './context/ThemeContext';
+import { Layout, ErrorBoundary } from './components';
+import {
+  Dashboard,
+  Resources,
+  Optimizations,
+  Budgets,
+  Anomalies,
+  Savings,
+  Settings,
+  NotFound,
+} from './pages';
 
-function App() {
-  const [currentPage, setCurrentPage] = useState("dashboard");
-  const [selectedResource, setSelectedResource] = useState(null);
-
-  const handleViewDetails = (resourceId, resourceType) => {
-    setSelectedResource({ id: resourceId, type: resourceType });
-    setCurrentPage("detail");
-  };
-
-  const handleBackToDashboard = () => {
-    setCurrentPage("dashboard");
-    setSelectedResource(null);
-  };
-
+const App = () => {
   return (
-    <>
-      {currentPage === "dashboard" ? (
-        <Dashboard onViewDetails={handleViewDetails} />
-      ) : (
-        <ResourceDetail 
-          resource={selectedResource} 
-          onBack={handleBackToDashboard} 
-        />
-      )}
-    </>
+    <ThemeProvider>
+      <ErrorBoundary>
+        <Router>
+          <Layout>
+            <Routes>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/resources" element={<Resources />} />
+              <Route path="/optimizations" element={<Optimizations />} />
+              <Route path="/budgets" element={<Budgets />} />
+              <Route path="/anomalies" element={<Anomalies />} />
+              <Route path="/savings" element={<Savings />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Layout>
+        </Router>
+      </ErrorBoundary>
+    </ThemeProvider>
   );
-}
+};
 
 export default App;
